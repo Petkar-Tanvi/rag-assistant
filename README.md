@@ -14,3 +14,8 @@ AI retrieves the most relevant sections and generates precise answers.
 ```bash
 pip install -r requirements.txt
 streamlit run app.py
+## 🚀 Live Demo
+
+Try the application here:
+
+https://rag-assistant-tanvi.streamlit.app/
