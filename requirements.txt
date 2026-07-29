@@ -6,3 +6,4 @@ sentence-transformers
 streamlit
 python-dotenv
 pypdf
+langchain-text-splitters
