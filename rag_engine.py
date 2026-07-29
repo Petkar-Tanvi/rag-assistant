@@ -3,75 +3,233 @@
 # Retrieval Augmented Generation using LangChain + Groq + FAISS
 # ============================================================
 
-from langchain_community.document_loaders import PyPDFLoader, TextLoader
+from langchain_community.document_loaders import (
+    PyPDFLoader,
+    TextLoader
+)
+
 from langchain_text_splitters import RecursiveCharacterTextSplitter
+
 from langchain_community.embeddings import HuggingFaceEmbeddings
+
 from langchain_community.vectorstores import FAISS
+
 from langchain_groq import ChatGroq
+
 from langchain_classic.chains import RetrievalQA
+
 from dotenv import load_dotenv
+
 import os
 
+
+# Load environment variables
 load_dotenv()
 
-print("API Key:", os.getenv("GROQ_API_KEY"))
+
+# ------------------------------------------------------------
+# Load Document + Create Vector Store
+# ------------------------------------------------------------
 
 def load_and_index_document(file_path: str):
+
     """
-    Step 1: Load document
-    Step 2: Split into chunks
-    Step 3: Convert to vectors (embeddings)
-    Step 4: Store in FAISS vector database
+    1. Load document
+    2. Split into chunks
+    3. Create embeddings
+    4. Store vectors in FAISS
     """
 
-    # Load document based on file type
+
+    # Load document
+
     if file_path.endswith(".pdf"):
+
         loader = PyPDFLoader(file_path)
+
     else:
-        loader = TextLoader(file_path)
+
+        loader = TextLoader(
+            file_path,
+            encoding="utf-8"
+        )
+
 
     documents = loader.load()
 
-    # Split into small chunks — AI works better with smaller pieces
+
+
+    # Split documents into chunks
+
     splitter = RecursiveCharacterTextSplitter(
-        chunk_size=500,       # each chunk = 500 characters
-        chunk_overlap=50      # 50 char overlap so meaning isn't lost
+
+        chunk_size=500,
+
+        chunk_overlap=50
+
     )
+
+
     chunks = splitter.split_documents(documents)
 
-    # Convert text chunks to vectors using a free embedding model
+
+
+    # Create embeddings
+
     embeddings = HuggingFaceEmbeddings(
-        model_name="all-MiniLM-L6-v2"  # lightweight, fast, free
+
+        model_name="all-MiniLM-L6-v2"
+
     )
 
-    # Store vectors in FAISS (Facebook AI Similarity Search)
-    vector_store = FAISS.from_documents(chunks, embeddings)
+
+
+    # Create FAISS vector database
+
+    vector_store = FAISS.from_documents(
+
+        chunks,
+
+        embeddings
+
+    )
+
 
     return vector_store
 
 
-def get_answer(vector_store, question: str) -> str:
+
+# ------------------------------------------------------------
+# Generate Answer + Sources
+# ------------------------------------------------------------
+
+def get_answer(vector_store, question: str):
+
     """
-    Step 1: Search vector store for relevant chunks
-    Step 2: Pass chunks + question to LLM
-    Step 3: LLM generates answer based on document context
+    RAG pipeline:
+
+    Question
+        |
+        ↓
+    FAISS Retriever
+        |
+        ↓
+    Relevant document chunks
+        |
+        ↓
+    Groq LLM
+        |
+        ↓
+    Answer + citations
     """
 
-    # Initialize Groq LLM (Llama 3 — free and fast)
+
+
+    # Initialize Groq LLM
+
     llm = ChatGroq(
-    model="llama-3.1-8b-instant",
-    temperature=0.2,
-    groq_api_key=os.getenv("GROQ_API_KEY")
-)
-    
 
-    # Create RAG chain: retriever finds docs, LLM answers
-    qa_chain = RetrievalQA.from_chain_type(
-        llm=llm,
-        chain_type="stuff",       # 'stuff' = put all chunks into prompt
-        retriever=vector_store.as_retriever(search_kwargs={"k": 3}),
-        return_source_documents=False
+        model="llama-3.1-8b-instant",
+
+        temperature=0.2,
+
+        groq_api_key=os.getenv(
+            "GROQ_API_KEY"
+        )
+
     )
 
-    response = qa_chain.invoke({"query": question})
-    return response["result"]
+
+
+    # Create RAG chain
+
+    qa_chain = RetrievalQA.from_chain_type(
+
+        llm=llm,
+
+        chain_type="stuff",
+
+        retriever=vector_store.as_retriever(
+
+            search_kwargs={
+                "k": 3
+            }
+
+        ),
+
+        return_source_documents=True
+
+    )
+
+
+
+    # Get response
+
+    response = qa_chain.invoke(
+
+        {
+            "query": question
+        }
+
+    )
+
+
+
+    answer = response["result"]
+
+
+
+    # Extract sources
+
+    sources = []
+
+
+    for doc in response["source_documents"]:
+
+
+        source_file = doc.metadata.get(
+
+            "source",
+
+            "Unknown document"
+
+        )
+
+
+        page_number = doc.metadata.get(
+
+            "page",
+
+            None
+
+        )
+
+
+        if page_number is not None:
+
+            sources.append(
+
+                f"{source_file} - Page {page_number + 1}"
+
+            )
+
+        else:
+
+            sources.append(
+
+                source_file
+
+            )
+
+
+
+    # Remove duplicate sources
+
+    sources = list(
+
+        set(sources)
+
+    )
+
+
+    return answer, sources
